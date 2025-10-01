@@ -21,17 +21,14 @@ client = openai.OpenAI()
 # --- CLEANING FUNCTION ---
 def clean_response(text: str) -> str:
     """
-    Removes all [source] references and any bracketed numbers like [1], [2], etc.
-    Also cleans up spaces.
+    Removes all source-style references like [1], [source], [anything inside brackets],
+    and cleans up extra spaces/punctuation.
     """
-    # Remove [source] or [sources]
-    text = re.sub(r"\[source[s]?\]", "", text, flags=re.IGNORECASE)
-
-    # Remove numeric citations like [1], [12], [34]
-    text = re.sub(r"\[\d+\]", "", text)
-
-    # Remove any leftover [ ... ] completely
+    # Remove anything inside square brackets: [ ... ]
     text = re.sub(r"\[[^\]]*\]", "", text)
+
+    # Remove standalone numbers (like "1", "2.") that sometimes remain
+    text = re.sub(r"\b\d+\b", "", text)
 
     # Fix spaces before punctuation (e.g., "game ." -> "game.")
     text = re.sub(r"\s+([.,!?])", r"\1", text)
