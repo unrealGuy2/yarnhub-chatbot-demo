@@ -12,25 +12,36 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# --- Your boss's Assistant ID ---
+# --- Your Assistant ID ---
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 
-# Initialize the OpenAI client
+# Initialize OpenAI client
 client = openai.OpenAI()
 
 # --- CLEANING FUNCTION ---
 def clean_response(text: str) -> str:
     """
-    Removes all source-style references like [1], [source], [anything inside brackets],
-    and cleans up extra spaces/punctuation.
+    Cleans AI responses by removing:
+    - Square bracket references [ ... ]
+    - Weird unicode markers like  ... 
+    - Tokens like :source:, :ref:, etc.
+    - Standalone numbers
+    - Extra spaces and punctuation issues
     """
-    # Remove anything inside square brackets: [ ... ]
+
+    # Remove [ ... ] references
     text = re.sub(r"\[[^\]]*\]", "", text)
 
-    # Remove standalone numbers (like "1", "2.") that sometimes remain
+    # Remove weird markers like ...
+    text = re.sub(r".*?", "", text)
+
+    # Remove special tokens like :source:, :ref:, :footnote:
+    text = re.sub(r":\w+:", "", text, flags=re.IGNORECASE)
+
+    # Remove standalone numbers
     text = re.sub(r"\b\d+\b", "", text)
 
-    # Fix spaces before punctuation (e.g., "game ." -> "game.")
+    # Fix spacing before punctuation
     text = re.sub(r"\s+([.,!?])", r"\1", text)
 
     # Collapse multiple spaces
@@ -38,7 +49,7 @@ def clean_response(text: str) -> str:
 
     return text.strip()
 
-# --- THE WEBHOOK ---
+# --- WEBHOOK ---
 @app.route("/webhook", methods=["POST"])
 def handle_webhook():
     try:
@@ -48,23 +59,23 @@ def handle_webhook():
         if not user_message:
             return jsonify({"error": "No message provided"}), 400
 
-        # Step 1: Create a new Thread (a conversation)
+        # Step 1: Create a new Thread
         thread = client.beta.threads.create()
 
-        # Step 2: Add the user's message to the Thread
+        # Step 2: Add the user message
         client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
             content=user_message
         )
 
-        # Step 3: Run the Assistant on this Thread
+        # Step 3: Run the Assistant
         run = client.beta.threads.runs.create(
             thread_id=thread.id,
             assistant_id=ASSISTANT_ID
         )
 
-        # Step 4: Wait for the Assistant to finish processing
+        # Step 4: Wait until it's finished
         while run.status in ["queued", "in_progress"]:
             run = client.beta.threads.runs.retrieve(
                 thread_id=thread.id,
@@ -72,21 +83,23 @@ def handle_webhook():
             )
             time.sleep(0.5)
 
-        # Step 5: Retrieve the messages from the Thread
+        # Step 5: Get messages
         messages = client.beta.threads.messages.list(thread_id=thread.id)
 
-        # Step 6: Get the latest message from the Assistant
+        # Step 6: Extract latest assistant reply
         ai_reply = messages.data[0].content[0].text.value
 
-        # --- Clean the reply ---
-        ai_reply = clean_response(ai_reply)
+        # --- Debug logs ---
+        print("\nRAW AI REPLY >>>", ai_reply)
+        cleaned = clean_response(ai_reply)
+        print("CLEANED REPLY >>>", cleaned, "\n")
 
-        return jsonify({"reply": ai_reply})
+        return jsonify({"reply": cleaned})
 
     except Exception as e:
         print(f"An error occurred: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
 
-# --- Run server ---
+# --- Run locally ---
 if __name__ == "__main__":
     app.run(port=5001, debug=True)
