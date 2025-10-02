@@ -29,6 +29,9 @@ def clean_response(text: str) -> str:
     - Extra spaces and punctuation issues
     """
 
+    if not text:
+        return ""
+
     # Remove [ ... ] references
     text = re.sub(r"\[[^\]]*\]", "", text)
 
@@ -86,8 +89,20 @@ def handle_webhook():
         # Step 5: Get messages
         messages = client.beta.threads.messages.list(thread_id=thread.id)
 
-        # Step 6: Extract latest assistant reply
-        ai_reply = messages.data[0].content[0].text.value
+        # Step 6: Extract latest assistant reply safely
+        ai_reply = None
+        for msg in messages.data:
+            if msg.role == "assistant":
+                # Find the first text block
+                for block in msg.content:
+                    if block.type == "text":
+                        ai_reply = block.text.value
+                        break
+            if ai_reply:
+                break
+
+        if not ai_reply:
+            return jsonify({"reply": "Sorry, I couldn’t generate a response this time."})
 
         # --- Debug logs ---
         print("\nRAW AI REPLY >>>", ai_reply)
